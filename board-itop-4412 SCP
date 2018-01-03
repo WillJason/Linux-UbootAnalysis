@@ -1,0 +1,316 @@
+从大方面来说，u-boot的启动分成两个阶段，第一个阶段主要的职责是准备初始化的环境，主要有以下几点
+①设置异常向量表
+②把CPU的工作模式设置为SVC32模式
+③关闭中断、MMU和cache
+④关闭看门狗
+⑤初始化内存、时钟、串口
+⑥设置堆栈
+⑦代码搬移
+⑧清bss段
+⑨跳转到c语言中执行（第二阶段）
+此时系统还没有进入C语言的运行阶段，并没有堆栈，也就不需要额外的RAM。
+第二阶段在上一段建立好C语言运行环境的基础上，进行各种外设的初始化，并循环执行用户命令。
+
+.globl _start
+_start: b	reset                     //uboot启动从_start开始，跳转到reset       
+	ldr	pc, _undefined_instruction   设置中断向量表
+	ldr	pc, _software_interrupt
+	ldr	pc, _prefetch_abort
+	ldr	pc, _data_abort
+	ldr	pc, _not_used
+	ldr	pc, _irq
+	ldr	pc, _fiq
+
+系统开机进入到u-boot运行时，首先进入到u-boot的入口_start标号处，然后通过 b  reset 跳转到reset标号处，我们就到reset标号一探究竟。
+/*
+ * the actual reset code
+ */
+reset:
+#if 0
+	/*
+	 * set the cpu to SVC32 mode and IRQ & FIQ disable
+	 */
+	mrs	r0, cpsr
+	bic	r0, r0, #0x3f
+	orr	r0, r0, #0xd3
+	msr	cpsr, r0
+#else//*****ly                进入管理模式
+	mrs	r0, cpsr              程序状态寄存器cpsr
+	bic	r0, r0, #0x1f          cpsr的低五位清零
+	orr	r0, r0, #0xd3          关中断，并进入SVC32模式
+	msr	cpsr,r0            
+#endif
+接下来初始化缓存
+#if 1 //*****ly
+cache_init:
+	mrc	p15, 0, r0, c0, c0, 0	@ read main ID register
+	and	r1, r0, #0x00f00000	@ variant
+	and	r2, r0, #0x0000000f	@ revision
+	orr	r2, r2, r1, lsr #20-4	@ combine variant and revision
+	cmp	r2, #0x30
+	mrceq	p15, 0, r0, c1, c0, 1	@ read ACTLR
+	orreq	r0, r0, #0x6		@ Enable DP1(2), DP2(1)
+	mcreq	p15, 0, r0, c1, c0, 1	@ write ACTLR
+/*
+	 * Invalidate L1 I/D 让L1的I/D cache失效
+我们在使用cache的时候要经过一系列的配置，在没配置之前是不能使用的。所以我们要关闭cache，但是在关闭cache之前cache里面可能已经有数据了，为了不影响我们的代码，所以要先让其失效，在进行关闭。
+	 */
+	mov	r0, #0			@ set up for MCR
+	mcr	p15, 0, r0, c8, c7, 0	@ invalidate TLBs
+	mcr	p15, 0, r0, c7, c5, 0	@ invalidate icache
+/*
+	 * disable MMU stuff and caches关闭MMU和cache
+跟cache的原因一样，在使用MMU之前要进行一系列的初始化，并且过程比较复杂，现在用不到所以要关闭它。
+	 */
+	mrc	p15, 0, r0, c1, c0, 0
+	bic	r0, r0, #0x00002000	@ clear bits 13 (--V-)
+	bic	r0, r0, #0x00000007	@ clear bits 2:0 (-CAM)
+	orr	r0, r0, #0x00001000	@ set bit 12 (---I) Icache
+	orr	r0, r0, #0x00000002	@ set bit 1  (--A-) Align
+	orr	r0, r0, #0x00000800	@ set bit 11 (Z---) BTB
+	mcr	p15, 0, r0, c1, c0, 0
+#endif
+/* Read booting information */读取启动信息
+ldr	r0, =POWER_BASE
+ldr	r1, [r0,#OMR_OFFSET]读OM引脚的配置状态
+bic	r2, r1, #0xffffffc1
+根据OM引脚状态
+/* NAND BOOT */
+@	cmp	r2, #0x0		@ 512B 4-cycle
+@	moveq	r3, #BOOT_NAND
+
+@	cmp	r2, #0x2		@ 2KB 5-cycle
+@	moveq	r3, #BOOT_NAND
+
+@	cmp	r2, #0x4		@ 4KB 5-cycle	8-bit ECC
+@	moveq	r3, #BOOT_NAND
+
+	cmp     r2, #0xA
+        moveq   r3, #BOOT_ONENAND
+
+@	cmp	r2, #0x6		@ 4KB 5-cycle	16-bit ECC
+@	moveq	r3, #BOOT_NAND
+
+	/* SD/MMC BOOT */
+	cmp     r2, #0x4
+        moveq   r3, #BOOT_MMCSD	
+
+	/* eMMC4.3 BOOT */
+	cmp		r2, #0x6
+	moveq	r3, #BOOT_EMMC43
+
+	/* eMMC441 BOOT */
+	cmp		r2, #0x28
+	moveq	r3, #BOOT_EMMC441
+	
+        /* NOR BOOT */
+@	cmp     r2, #0x14
+@	moveq   r3, #BOOT_NOR	
+
+	/* For second device booting */
+	/* OneNAND BOOTONG failed */
+@	cmp     r2, #0x8
+@	moveq   r3, #BOOT_SEC_DEV
+
+	/* Uart BOOTONG failed */
+@	cmp     r2, #(0x1<<4)
+@	moveq   r3, #BOOT_SEC_DEV
+	
+	ldr	r0, =INF_REG_BASE
+	str	r3, [r0, #INF_REG3_OFFSET]     
+
+/*
+	 * Go setup Memory and board specific bits prior to relocation.
+	 */
+	//b     .
+	bl	lowlevel_init	/* go setup pll,mux,memory */初始化时钟、内存、串口
+
+	.globl lowlevel_init
+lowlevel_init:
+#if 1//*****ly
+	/* use iROM stack in bl2 */
+	ldr	sp, =0x02060000          函数返回地址的保存，将lr保存在ip
+#endif
+	push	{lr}     lowlevel_init肯定会调用更多函数，所以将回掉地址保存在iROM的堆栈中
+查看CPU是怎么复位的，如果从睡眠唤醒进入复位则发生跳转，否则继续执行
+/* check reset status  */
+ldr     r0, =(INF_REG_BASE + INF_REG1_OFFSET)
+ldr     r1, [r0]
+/* AFTR wakeup reset */
+ldr	r2, =S5P_CHECK_DIDLE
+cmp	r1, r2
+beq	exit_wakeup
+
+/* Sleep wakeup reset */
+ldr	r2, =S5P_CHECK_SLEEP
+cmp	r1, r2
+beq	wakeup_reset
+
+/* PS-Hold high */
+拉高PS-Hold管脚，唤醒电源管理芯片
+ldr r0, =0x1002330c
+ldr r1, [r0]
+orr r1, r1, #0x300
+str r1, [r0]
+
+ldr     r0, =0x11000c08
+ldr r1, =0x0
+str r1, [r0]
+
+/* Clear  MASK_WDT_RESET_REQUEST  */关看门狗
+ldr r0, =0x1002040c
+ldr r1, =0x00
+str r1, [r0]
+
+#ifdef check_mem /*liyang 20110822*/
+/* when we already run in ram, we don't need to relocate U-Boot.
+* and actually, memory controller must be configured before U-Boot
+* is running in ram.
+配置内存控制器
+*/
+ldr	r0, =0xff000fff
+bic	r1, pc, r0		/* r0 <- current base addr of code */
+ldr	r2, _TEXT_BASE		/* r1 <- original base addr in ram */
+bic	r2, r2, r0		/* r0 <- current base addr of code */
+cmp     r1, r2                  /* compare r0, r1                  */
+beq     1f			/* r0 == r1 then skip sdram init   */
+#endif
+
+/* add by cym 20130218 *//* init system clock */
+初始化系统时钟
+bl system_clock_init_scp（跳转代码略过，未详细分析。。。。。）
+
+/* Memory initialize */
+内存初始化
+bl mem_ctrl_asm_init_ddr3（跳转代码略过，未详细分析。。。。。）
+
+取消存储保护区域
+bl tzpc_init
+
+b  1f  中的f是forward的意思，    ------>跳到程序的后面（往下）
+1表示标号（局部标号）
+接下来跳转到1后执行：
+（未定义的使用的跳过了）
+out:
+	/* for UART */初始化串口
+	bl uart_asm_init
+
+#if defined(CONFIG_ONENAND)
+	bl onenandcon_init
+#endif
+#if defined(CONFIG_NAND)
+	/* simple init for NAND */
+	bl nand_asm_init
+#endif
+
+/* Print 'K' */打印“K”通过UART
+ldr	r0, =ELFIN_UART_CONSOLE_BASE
+ldr	r1, =0x4b4b4b4b
+str	r1, [r0, #UTXH_OFFSET]
+
+/* 2010.08.27 by icarus : for temporary 3D clock fix */
+ldr	r1, =0x1
+ldr	r2, =0x1003C22C
+str	r1, [r2]
+ldr	r1, =0x2
+ldr	r2, =0x1003C52C
+str	r1, [r2]
+
+/* 2010.10.17 by icarus : for temporary MFC clock fix */
+ldr	r1, =0x3
+ldr	r2, =0x1003C528
+str	r1, [r2]
+
+pop	{pc}
+回到上一层调用
+
+ldr	r0, =0x1002330C  /* PS_HOLD_CONTROL register */拉高PS-Hold管脚，唤醒电源管理芯片
+ldr	r1, =0x00005300	 /* PS_HOLD output high	*/
+str	r1, [r0]
+/* get ready to call C functions */在调用C函数之前做准备
+ldr	sp, _TEXT_PHY_BASE	/* setup temp stack pointer */
+sub	sp, sp, #12
+mov	fp, #0			/* no previous frame, so fp=0 */
+/* when we already run in ram, we don't need to relocate U-Boot.
+* and actually, memory controller must be configured before U-Boot
+* is running in ram.
+*/
+检查uboot是否在DRAM中
+因此PC指针也不会偏移4K之外，因此通过清掉低12位来得到第一条指令（即入口点）
+的位置。链接地址与PC（去掉12位）相同，说明在DRAM里了
+ldr	r0, =0xff000fff
+bic	r1, pc, r0		/* r0 <- current base addr of code */
+ldr	r2, _TEXT_BASE		/* r1 <- original base addr in ram */
+bic	r2, r2, r0		/* r0 <- current base addr of code */
+cmp     r1, r2                  /* compare r0, r1                  */
+beq     after_copy		/* r0 == r1 then skip flash copy   */
+
+after_copy:
+#if defined(CONFIG_ENABLE_MMU)
+enable_mmu:使能内存管理器
+	/* enable domain access */设置enable domain access不会检查 请求在转换表中的权限位
+	ldr	r5, =0x0000ffff
+	mcr	p15, 0, r5, c3, c0, 0		@load domain access register
+
+	/* Set the TTB register */设置MMU表基地址 0x43e00000
+（物理地址到虚拟地址的平滑过渡）
+	ldr	r0, _mmu_table_base
+	ldr	r1, =CFG_PHY_UBOOT_BASE
+	ldr	r2, =0xfff00000
+	bic	r0, r0, r2
+	orr	r1, r0, r1
+	mcr	p15, 0, r1, c2, c0, 0
+
+	/* Enable the MMU */
+mmu_on:
+	mrc	p15, 0, r0, c1, c0, 0
+	orr	r0, r0, #1
+	mcr	p15, 0, r0, c1, c0, 0
+	nop
+	nop
+	nop
+	nop
+#endif
+
+
+#ifdef CONFIG_EVT1
+	/* store DMC density information in u-boot C level variable */
+	ldr	r0, = CFG_UBOOT_BASE
+	sub	r0, r0, #4
+	ldr	r1, [r0]
+	ldr	r0, _dmc_density
+	str	r1, [r0]
+#endif
+
+skip_hw_init:
+	/* Set up the stack						    */
+stack_setup:
+#if defined(CONFIG_MEMORY_UPPER_CODE)
+	ldr	sp, =(CFG_UBOOT_BASE + CFG_UBOOT_SIZE - 0x1000)
+#else
+	ldr	r0, _TEXT_BASE		/* upper 128 KiB: relocated uboot   */
+	sub	r0, r0, #CONFIG_SYS_MALLOC_LEN	/* malloc area                      */
+	sub	r0, r0, #CFG_GBL_DATA_SIZE /* bdinfo                        */
+#if defined(CONFIG_USE_IRQ)
+	sub	r0, r0, #(CONFIG_STACKSIZE_IRQ+CONFIG_STACKSIZE_FIQ)
+#endif
+	sub	sp, r0, #12		/* leave 3 words for abort-stack    */
+
+#endif
+
+clear_bss:存放全局变量和静态变量，在程序执行前BSS段会自动清0
+	ldr	r0, _bss_start		/* find start of bss segment        */
+	ldr	r1, _bss_end		/* stop here                        */
+	mov 	r2, #0x00000000		/* clear                            */
+
+clbss_l:
+	str	r2, [r0]		/* clear loop...                    */
+	add	r0, r0, #4
+	cmp	r0, r1
+	ble	clbss_l
+	
+	ldr	pc, _start_armboot
+
+_start_armboot:
+	.word start_armboot
+
