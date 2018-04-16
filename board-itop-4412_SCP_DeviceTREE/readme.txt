@@ -1,0 +1,1 @@
+This folder for itop-4412 (kernel4.14-devicetree)uboot.
