@@ -53,6 +53,11 @@ led_on:
 
 reset:
 	/* Allow the board to save important registers */
+	/*注意到 save_boot_params 函数中没有进行任何操作，直接返回了，注释告诉我们栈指针
+	还没有初始化，不能向栈中保存任何数据。
+	值得注意的是 .weak 伪操作： .weak save_boot_params
+
+可以理解为如果定义了 save_boot_params 这个函数，那么久调用它，如果没有定义，就定义它，*/
 	b	save_boot_params
 save_boot_params_ret:
 	/*
@@ -84,6 +89,7 @@ save_boot_params_ret:
 #endif
 
 	/* the mask ROM code should have PLL and others stable */
+	/*配置cp15，设置异常向量入口 */
 #ifndef CONFIG_SKIP_LOWLEVEL_INIT
 	bl	cpu_init_cp15
 	bl	cpu_init_crit
@@ -130,6 +136,8 @@ ENDPROC(save_boot_params)
  *
  *************************************************************************/
 ENTRY(cpu_init_cp15)
+/*cpu_init_cp15函数是配置cp15协处理器相关寄存器来设置处理器的MMU，cache以及tlb。如果没有定义CONFIG_SYS_ICACHE_OFF则会打开icache。关掉mmu以及tlb。
+具体配置过程可以对照cp15寄存器来看，这里不详细说了*/
 	/*
 	 * Invalidate L1 I/D
 	 */
@@ -259,6 +267,17 @@ ENDPROC(cpu_init_cp15)
  *
  *************************************************************************/
 ENTRY(cpu_init_crit)
+/*看注释可以明白，cpu_init_crit调用的lowlevel_init函数是与特定开发板相关的初始化函数，在这个函数
+里会做一些pll初始化，如果不是从mem启动，则会做memory初始化，方便后续拷贝到mem中运行。
+lowlevel_init函数则是需要移植来实现，做clk初始化以及ddr初始化
+
+从cpu_init_crit返回后，_start的工作就完成了，接下来就要调用_main，总结一下_start工作：
+
+1 前面总结过的部分，初始化异常向量表，设置svc模式，关中断
+
+2 配置cp15，初始化mmu cache tlbq
+
+3 板级初始化，pll memory初始化*/
 	/*
 	 * Jump to board specific initialization...
 	 * The Mask ROM will have already initialized
