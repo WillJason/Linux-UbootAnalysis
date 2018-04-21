@@ -75,6 +75,7 @@ ENTRY(_main)
 	mov	r9, sp		/* GD is above SP */
 	mov	r1, sp
 	mov	r0, #0
+/*最后将sp保存在r9寄存器中。因此r9寄存器中的地址就是gd结构体的首地址*/
 	/*清除GD空间，以待重新赋值*/
 clr_gd:
 	cmp	r1, r2			/* while not at end of GD */
@@ -96,7 +97,16 @@ clr_gd:
  * relocate_code(addr_moni). Trick here is that we'll return
  * 'here' but relocated.
  */
+	/*前4条汇编实现了新gd结构体的更新。
+	首先更新sp，并且将sp 8字节对齐，方便后面函数开辟栈能对齐，
 
+	然后获取gd->bd地址到r9中，需要注意，在board_init_f中gd->bd已经
+	更新为新分配的bd了，下一条汇编将r9减掉bd的size，这样就获取到了board_init_f中新分配的gd了！
+
+	后面汇编则是为relocate_code做准备，首先加载here地址，然后加上新地址
+	偏移量给lr，则是code relocate后的新here了，relocate_code返回条转到lr，则是新位置的here！
+
+	最后在r0中保存code的新地址，跳转到relocate_code*/
 	ldr	sp, [r9, #GD_START_ADDR_SP]	/* sp = gd->start_addr_sp */
 	bic	sp, sp, #7	/* 8-byte alignment for ABI compliance */
 	ldr	r9, [r9, #GD_BD]		/* r9 = gd->bd */
@@ -106,7 +116,9 @@ clr_gd:
 	ldr	r0, [r9, #GD_RELOC_OFF]		/* r0 = gd->reloc_off */
 	add	lr, lr, r0
 	ldr	r0, [r9, #GD_RELOCADDR]		/* r0 = gd->relocaddr */
+	/*将uboot code拷贝到relocaddr*/
 	b	relocate_code
+	//可以参考这位大牛的博客http://blog.csdn.net/skyflying2012/article/details/37660265
 here:
 /*
  * now relocate vectors
@@ -153,7 +165,19 @@ clbss_l:cmp	r0, r1			/* while not at end of BSS */
 	/* call board_init_r */
 	ldr	pc, =board_init_r	/* this is auto-relocated! */
 
+	/*如果icache是enable，则无效掉icache，保证从sdram中更新指令到cache中。
+	接着更新异常向量表首地址，因为code被relocate，所以异常向量表也被relocate。
+
+	从c_runtime_cpu_setup返回，下面一段汇编是将bss段清空。
+
+	接下来分别调用了coloured_LED_init以及red_led_on,很多开发板都会有led指示灯，
+	这里可以实现上电指示灯亮，有调试作用。
+
+	最后r0赋值gd指针，r1赋值relocaddr，进入最后的board_init_r !*/
 	/* we should not return here. */
 #endif
 
 ENDPROC(_main)
+
+
+/*参考资料：https://blog.csdn.net/dddd0216/article/details/51142333*/

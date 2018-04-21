@@ -307,7 +307,6 @@ void board_init_f(unsigned long bootflag)
 	//Copy U-boot from mmc to RAM
 	copy_uboot_to_ram();
 
-	/*使用printascii函数打印prink缓存信息*/
 	printascii("copy BL2 ends.\n");
 	/* Jump to U-Boot image */
 	uboot = (void *)CONFIG_SYS_TEXT_BASE;

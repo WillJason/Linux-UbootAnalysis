@@ -92,6 +92,9 @@ save_boot_params_ret:
 	/*配置cp15，设置异常向量入口 */
 #ifndef CONFIG_SKIP_LOWLEVEL_INIT
 	bl	cpu_init_cp15
+	/*cpu_init_crit调用的level_init函数与特定开发板相关的初始化函数，在这个函数里会做一些pll
+	初始化，如果不是从mem启动，则会做memory初始化，方便后续拷贝到mem中运行（注意：这个开发板
+	没有在这里做内存初始化）*/
 	bl	cpu_init_crit
 #endif
 
