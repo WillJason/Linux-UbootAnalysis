@@ -90,7 +90,7 @@ clr_gd:
 	bl led_on
 	bl board_init_f
 	/*看打印信息发现这里貌似调用了Spl_boot.c (arch\arm\cpu\armv7\exynos):和Board_f.c (common)这两
-	个文件，有些不解*/
+	个文件，其中一个是weak定义*/
 
 #if ! defined(CONFIG_SPL_BUILD)
 
@@ -165,6 +165,7 @@ clbss_l:cmp	r0, r1			/* while not at end of BSS */
 	mov     r0, r9                  /* gd_t */
 	ldr	r1, [r9, #GD_RELOCADDR]	/* dest_addr */
 	/* call board_init_r */
+	/*貌似调用Spl_boot.c (arch\arm\cpu\armv7\exynos)和 Board_r.c (common)这两个文件，其中一个也是weak定义*/
 	ldr	pc, =board_init_r	/* this is auto-relocated! */
 
 	/*如果icache是enable，则无效掉icache，保证从sdram中更新指令到cache中。

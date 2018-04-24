@@ -285,6 +285,7 @@ static void setup_global_data(gd_t *gdp)
 	gd->have_console = 1;
 }
 
+/**/
 void board_init_f(unsigned long bootflag)
 {
 	__aligned(8) gd_t local_gd;
