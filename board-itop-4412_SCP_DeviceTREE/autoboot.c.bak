@@ -296,6 +296,7 @@ do_bootm()调用do_bootm_states()在./common/bootm.c;
 do_bootm_states()
 调用bootm_find_other->bootm_find_ramdisk_fdt->bootm_find_fdt->boot_get_fdt->
 printf("   Booting using the fdt blob at %#08lx\n", fdt_addr);
+
 打印do_bootm_states: reserve fdt done.
 并调用bootm_os_get_boot_func()
 bootm_os_get_func()中boot_os[os]数组中对应到linux相关的函数入口，

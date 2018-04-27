@@ -294,6 +294,9 @@ bootm - boot application image from image in memory
 do_bootm()调用do_bootm_states()在./common/bootm.c;
 
 do_bootm_states()
+调用bootm_find_os->boot_get_kernel
+printf("## Booting kernel from Legacy Image at %08lx ...\n",
+		       img_addr);
 调用bootm_find_other->bootm_find_ramdisk_fdt->bootm_find_fdt->boot_get_fdt->
 printf("   Booting using the fdt blob at %#08lx\n", fdt_addr);
 
