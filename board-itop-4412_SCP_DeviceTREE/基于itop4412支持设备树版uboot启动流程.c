@@ -1,6 +1,28 @@
 /*
 对于任何程序，入口函数是在链接时决定的，uboot的入口是由链接脚本决定的。uboot下armv7链接脚本默认目录为arch/arm/cpu/u-boot.lds。这个可以在配置文件中与CONFIG_SYS_LDSCRIPT来指定。
 入口地址也是由连接器决定的，在配置文件中可以由CONFIG_SYS_TEXT_BASE指定。这个会在编译时加在ld连接器的选项-Ttext中
+board/samsung/itop-4412/Kconfig 里面的内容
+if TARGET_ITOP-4412
+
+config SYS_BOARD
+	default "itop-4412"
+
+config SYS_VENDOR
+	default "samsung"
+
+config SYS_CONFIG_NAME
+	default "itop-4412"
+
+endif
+
+将board/samsung/itop-4412/Kconfig 添加到arch/arm/cpu/armv7/exynos/Kconfig
+添加如下内容：
+source "board/samsung/itop-4412/Kconfig"
+在最后面endmenu 之前添加。
+
+ 修改include/configs/itop-4412.h 里面的一个宏定义：
+ #define CONFIG_SPL_LDSCRIPT    "board/samsung/common/exynos-uboot-spl.lds"
+
 查看u-boot.lds
 */
 OUTPUT_FORMAT("elf32-littlearm", "elf32-littlearm", "elf32-littlearm")
