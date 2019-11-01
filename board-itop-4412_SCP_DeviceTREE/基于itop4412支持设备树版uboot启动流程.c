@@ -127,7 +127,8 @@ save_boot_params_ret:
 
 	/* the mask ROM code should have PLL and others stable */
 	/*配置cp15，设置异常向量入口 */
-	/*这里由于已经定义CONFIG_SKIP_LOWLEVEL_INIT，所以跳过直接执行main*/
+	/*注意：这里由于已经定义CONFIG_SKIP_LOWLEVEL_INIT（itop-4412.h中#include <configs/exynos4-common.h>，
+	exynos4-common.h中#include "exynos-common.h"，exynos-common.h中定义了CONFIG_SKIP_LOWLEVEL_INIT），所以跳过直接执行main*/
 #ifndef CONFIG_SKIP_LOWLEVEL_INIT
 /*cpu_init_cp15函数是配置cp15协处理器相关寄存器来设置处理器的MMU，cache以及tlb。如果没有定义CONFIG_SYS_ICACHE_OFF则会打开icache。关掉mmu以及tlb。
 具体配置过程可以对照cp15寄存器来看，这里不详细说了*/
@@ -139,7 +140,9 @@ save_boot_params_ret:
 #endif
 
 	bl	_main
--------------------------------------
+/*-------------------------------------
+不运行仅为解释。
+-------------------------------------*/
 ENTRY(cpu_init_crit)
 /*看注释可以明白，cpu_init_crit调用的lowlevel_init函数是与特定开发板相关的初始化函数，在这个函数
 里会做一些pll初始化，如果不是从mem启动，则会做memory初始化，方便后续拷贝到mem中运行。
@@ -161,8 +164,10 @@ lowlevel_init函数则是需要移植来实现，做clk初始化以及ddr初始化
 	b	lowlevel_init		@ go setup pll,mux,memory
 ENDPROC(cpu_init_crit)
 #endif
-//_main函数在arch/arm/lib/crt0.S中，mian函数的作用在注释中有详细的说明 
 
+
+
+//_main函数在arch/arm/lib/crt0.S中，mian函数的作用在注释中有详细的说明 
 /*///////////////////////  crt0.S   //////////////////////// */
 ENTRY(_main)
 
@@ -173,7 +178,8 @@ ENTRY(_main)
 #if defined(CONFIG_SPL_BUILD) && defined(CONFIG_SPL_STACK)
 	ldr	sp, =(CONFIG_SPL_STACK)
 #else
-/*首先将CONFIG_SYS_INIT_SP_ADDR定义的值加载到栈指针sp中，这个宏定义在配置头文件itop-4412.h中指定。*/
+/*首先将CONFIG_SYS_INIT_SP_ADDR定义的值加载到栈指针sp中，这个宏定义在配置头文件itop-4412.h中指定。
+CONFIG_SYS_TEXT_BASE+UBOOT_SIZE-0x1000*/
 	ldr	sp, =(CONFIG_SYS_INIT_SP_ADDR)
 #endif
 /*接下来为board_init_f C函数调用提供环境，也就是栈指针sp初始化*/
@@ -207,21 +213,25 @@ clr_gd:
 				__aligned(8) gd_t local_gd;
 				__attribute__((noreturn)) void (*uboot)(void);
 			
-				/*设置全局指针变量的值
+				设置全局指针变量的值
 				setup_global_data(&local_gd);
-				/*arch_cpu_init()；
-				获取复位状态并赋相应的值给变量，
-				然后做出相应的动作：
-				关于供电锁存类PS_HOLD;
-				系统时钟初始化；
-				测试串口；
-				ddr内存初始化；
-				*//*
 				//如果是唤醒则退出唤醒（这段没有分析太明白，如有错误望指正）
 				if (do_lowlevel_init()) {
 					power_exit_wakeup();
 				}
-				//Copy U-boot from mmc to RAM
+				这里函数
+				do_lowlevel_init()
+					->arch_cpu_init()；
+					reset_status = get_reset_status();获取复位状态并赋相应的值给变量，
+					switch (reset_status)然后做出相应的动作：actions = DO_CLOCKS | DO_MEM_RESET | DO_POWER;
+					set_ps_hold_ctrl();关于供电锁存类PS_HOLD;
+					system_clock_init();系统时钟初始化；
+					test_uart();测试串口；
+					mem_ctrl_init(actions & DO_MEM_RESET);ddr内存初始化；
+					//tzpc_init();tzpc这个安全源代码去掉了，原因未知
+				/*
+				
+				//Copy U-boot from mmc to RAM 将uboot code拷贝到relocaddr
 				copy_uboot_to_ram();
 			
 				/*使用printascii函数打印prink缓存信息*//*
@@ -261,8 +271,74 @@ clr_gd:
 	ldr	r0, [r9, #GD_RELOC_OFF]		/* r0 = gd->reloc_off */
 	add	lr, lr, r0
 	ldr	r0, [r9, #GD_RELOCADDR]		/* r0 = gd->relocaddr */
-	/*将uboot code拷贝到relocaddr*/
+	/*将uboot code拷贝到relocaddr，注意这里没有用到！*/
 	b	relocate_code
+	 /*	 * void relocate_code(addr_moni)
+			 *
+			 * This function relocates the monitor code.
+			 *
+			 * NOTE:
+			 * To prevent the code below from containing references with an R_ARM_ABS32
+			 * relocation record type, we never refer to linker-defined symbols directly.
+			 * Instead, we declare literals which contain their relative location with
+			 * respect to relocate_code, and at run time, add relocate_code back to them.
+			 *
+			
+			ENTRY(relocate_code)
+				ldr	r1, =__image_copy_start	//* r1 <- SRC &__image_copy_start *
+				subs	r4, r0, r1		//* r4 <- relocation offset *
+				注意：这里判断是否运行在sdram上，也就是是否重定位完，如果重定位完就直接跳到后面relocate_done函数
+				这里我们之前已经copy_uboot_to_ram();在CONFIG_SYS_TEXT_BASE上运行，所以跳转
+				beq	relocate_done		//* skip relocation *       
+				ldr	r2, =__image_copy_end	//* r2 <- SRC &__image_copy_end *
+			
+			copy_loop:
+				ldmia	r1!, {r10-r11}		//* copy from source address [r1]    *
+				stmia	r0!, {r10-r11}		//* copy to   target address [r0]    *
+				cmp	r1, r2			//* until source end address [r2]    
+				blo	copy_loop
+			
+				
+				 //* fix .rel.dyn relocations
+				 
+				ldr	r2, =__rel_dyn_start	//* r2 <- SRC &__rel_dyn_start 
+				ldr	r3, =__rel_dyn_end	//* r3 <- SRC &__rel_dyn_end 
+			fixloop:
+				ldmia	r2!, {r0-r1}		//* (r0,r1) <- (SRC location,fixup) 
+				and	r1, r1, #0xff
+				cmp	r1, #23			//* relative fixup
+				bne	fixnext
+			
+				/* relative fix: increase location by offset *
+				add	r0, r0, r4
+				ldr	r1, [r0]
+				add	r1, r1, r4
+				str	r1, [r0]
+			fixnext:
+				cmp	r2, r3
+				blo	fixloop
+			
+			relocate_done:    跳转到这里
+			
+			#ifdef __XSCALE__        未定义，跳过
+				
+				//* On xscale, icache must be invalidated and write buffers drained,
+				// * even with cache disabled - 4.2.7 of xscale core developer's manual
+				//*
+				mcr	p15, 0, r0, c7, c7, 0	//* invalidate icache *
+				mcr	p15, 0, r0, c7, c10, 4	//* drain write buffer *
+			#endif
+			
+				// ARMv4- don't know bx lr but the assembler fails to see that 
+			
+			#ifdef __ARM_ARCH_4__     未定义，执行else
+				mov	pc, lr
+			#else
+				bx	lr    BX指令是ARM指令系统中的带状态切换跳转指令，跳转到lr地址，lr之前被赋值到here函数的地方，所以跳转到here
+			#endif
+			
+			ENDPROC(relocate_code)
+	*/
 	//可以参考这位大牛的博客http://blog.csdn.net/skyflying2012/article/details/37660265
 here:
 /*
