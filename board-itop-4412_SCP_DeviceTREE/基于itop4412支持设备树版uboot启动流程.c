@@ -524,7 +524,7 @@ void autoboot_command(const char *s)
 {
 	debug("### main_loop: bootcmd=\"%s\"\n", s ? s : "<UNDEFINED>");
 
-/*//如果延时大于等于零，并且没有在延时过程中接收到按键，则引导内核。
+/*//abortboot函数如果延时大于等于零，并且没有在延时过程中接收到按键，则引导内核。
 abortboot函数里会打印Hit any key to stop autoboot:。*/
 	if (stored_bootdelay != -1 && s && !abortboot(stored_bootdelay)) {
 #if defined(CONFIG_AUTOBOOT_KEYED) && !defined(CONFIG_AUTOBOOT_KEYED_CTRLC)
