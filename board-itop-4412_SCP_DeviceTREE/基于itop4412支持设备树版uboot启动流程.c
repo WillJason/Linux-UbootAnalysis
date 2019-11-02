@@ -1,5 +1,150 @@
 /*
-对于任何程序，入口函数是在链接时决定的，uboot的入口是由链接脚本决定的。uboot下armv7链接脚本默认目录为arch/arm/cpu/u-boot.lds。这个可以在配置文件中与CONFIG_SYS_LDSCRIPT来指定。
+先来说一下这个uboot的配置过程：
+	这个版本的uboot由两部分配置组成，一个是uboot/configs/itop-4412_deconfig,另一个是uboot/included/configs/Itop-4412.h  **
+这两个文件有什么不同？最大的不同就是"configs/boardname_defconfig"中的选项都可以在make menuconfig中进
+行配置,而"include/configs/boardname.h"中的选项是与开发板相关的一些特性,在make menuconfig中是找不到
+这些选项的。个人理解uboot/configs/itop-4412_deconfig也就是menuconfig中设置的CONFIG是跟各目录下的Kconfig和
+Makefile以及uboot源代码中都相关的都可以使能的，而include/configs/boardname.h中设置的CONFIG仅仅是和uboot
+源代码相关的。（之前S3c_2440的uboot配置是一起的，这个版本是分开的。）
+从configs/itop-4412_deconfig开始看：
+CONFIG_SPL=y
+CONFIG_ARM=y
+CONFIG_ARCH_EXYNOS=y
+	In--uboot/arch/arm/cpu/armv7/exynos/Kconfig:
+		if ARCH_EXYNOS........endif    定义后可以有效这个Kconfig的代码
+	In--uboot/arch/arm/Kconfig:
+		config ARCH_EXYNOS		使能此配置
+		bool "Samsung EXYNOS"
+		select CPU_V7   选中定义CPU_V7，后面有用
+CONFIG_TARGET_ITOP-4412=y
+	In--uboot/board/samsung/itop-4412/Kconfig:
+		if TARGET_ITOP-4412.......endif   定义后可以有效这个Kconfig的代码
+	In--uboot/arch/arm/cpu/armv7/exynos/Kconfig:
+		config TARGET_ITOP-4412		使能此配置
+		bool "Exynos4412 Ultimate board"
+		select SUPPORT_SPL    选中定义SUPPORT_SPL
+CONFIG_OF_CONTROL=y
+	给uboot源代码用设备树相关的有效，未具体分析
+CONFIG_DEFAULT_DEVICE_TREE="exynos4412-itop-4412"
+	定义使用哪一个uboot设备树文件
+CONFIG_OF_EMBED=y
+	给uboot源代码和顶层Makefile的设备树相关，未具体分析
+CONFIG_SYS_PROMT="ITOP-4412"
+CONFIG_DEBUG_LL=y
+CONFIG_DEBUG_UART_PHYS=0x13820000
+CONFIG_DEBUG_UART_8250_FLOW_CONTROL=y
+
+CONFIG_DM=y
+CONFIG_DM_SERIAL=y
+CONFIG_DM_GPIO=y
+--------------------------------------------------------------------------------------
+其他Kconfig中的config配置
+--------------------------------------------------------------------------------------
+In--uboot/arch/arm/Kconfig:
+config SYS_ARCH
+	default "arm"  默认为固定值，文件uboot/config.mk定义了ARCH := $(CONFIG_SYS_ARCH:"%"=%)，也就是ARCH="arm"
+config SYS_CPU
+        default "arm720t" if CPU_ARM720T
+        default "arm920t" if CPU_ARM920T
+        default "arm926ejs" if CPU_ARM926EJS
+        default "arm946es" if CPU_ARM946ES
+        default "arm1136" if CPU_ARM1136
+        default "arm1176" if CPU_ARM1176
+        default "armv7" if CPU_V7		之前使能了CPU_V7所以SYS_CPU为"armv7"
+        default "pxa" if CPU_PXA
+        default "sa1100" if CPU_SA1100
+	default "armv8" if ARM64
+In--uboot/arch/arm/cpu/armv7/exynos/Kconfig:
+config SYS_SOC
+	default "exynos"	默认为固定值，文件uboot/config.mk定义了SOC := $(CONFIG_SYS_SOC:"%"=%)，也就是SOC="exynos"
+
+config DM
+	default y
+
+config DM_SERIAL
+	default n
+
+config DM_SPI
+	default n
+
+config DM_SPI_FLASH
+	default n
+
+config DM_GPIO
+	default n	
+In--uboot/board/samsung/itop-4412/Kconfig:
+if TARGET_ITOP-4412   前面已经使能了所以有效
+
+config SYS_BOARD
+	default "itop-4412"  默认为固定值，文件uboot/config.mk定义了BOARD := $(CONFIG_SYS_BOARD:"%"=%)，也就是BOARD="itop-4412"
+
+config SYS_VENDOR
+	default "samsung"	默认为固定值，文件uboot/config.mk定义了VENDOR := $(CONFIG_SYS_VENDOR:"%"=%)，也就是VENDOR="samsung"
+
+config SYS_CONFIG_NAME
+	default "itop-4412"
+
+endif
+--------------------------------------------------------------------------------
+查看顶层Makefile中定义的定义的链接脚本的位置在哪：
+u-boot.lds: $(LDSCRIPT) prepare FORCE
+	$(call if_changed_dep,cpp_lds)
+	
+	
+# If board code explicitly specified LDSCRIPT or CONFIG_SYS_LDSCRIPT, use
+# that (or fail if absent).  Otherwise, search for a linker script in a
+# standard location.
+
+ifndef LDSCRIPT
+	#LDSCRIPT := $(srctree)/board/$(BOARDDIR)/u-boot.lds.debug
+	ifdef CONFIG_SYS_LDSCRIPT				#未定义，跳过
+		# need to strip off double quotes
+		LDSCRIPT := $(srctree)/$(CONFIG_SYS_LDSCRIPT:"%"=%)
+	endif
+endif
+
+# If there is no specified link script, we look in a number of places for it
+ifndef LDSCRIPT
+	ifeq ($(wildcard $(LDSCRIPT)),)
+		#//$(BOARDDIR)在config.mk中BOARDDIR = $(VENDOR)/$(BOARD)，根据前面的定义BOARDDIR=samsung/itop-4412
+		#//LDSCRIPT:=/board/samsung/itop-4412/u-boot.lds  无此文件
+		LDSCRIPT := $(srctree)/board/$(BOARDDIR)/u-boot.lds
+	endif
+	ifeq ($(wildcard $(LDSCRIPT)),)
+		#//$(CPUDIR)在config.mk中CPUDIR=arch/$(ARCH)/cpu$(if $(CPU),/$(CPU),)，根据前面的定义CPUDIR=arch/arm/cpu/armv7
+		#//LDSCRIPT :=/arch/arm/cpu/armv7/u-boot.lds   无此文件
+		LDSCRIPT := $(srctree)/$(CPUDIR)/u-boot.lds
+	endif
+	ifeq ($(wildcard $(LDSCRIPT)),)
+		#//LDSCRIPT := /arch/arm/cpu/u-boot.lds
+		LDSCRIPT := $(srctree)/arch/$(ARCH)/cpu/u-boot.lds
+	endif
+endif
+---------------------------------
+查看/arch/arm/cpu/u-boot.lds:
+#include <config.h>
+
+OUTPUT_FORMAT("elf32-littlearm", "elf32-littlearm", "elf32-littlearm")
+OUTPUT_ARCH(arm)
+ENTRY(_start)
+SECTIONS
+{
+	. = 0x00000000;
+
+	. = ALIGN(4);
+	.text :
+	{
+		*(.__image_copy_start)
+		*(.vectors)
+		#//之前CPUDIR定义为arch/arm/cpu/armv7,所以此处为arch/arm/cpu/armv7/start.o
+		CPUDIR/start.o (.text*)   
+		*(.text*)
+	}
+	..........................so on.
+--------------------------------
+对于任何程序，入口函数是在链接时决定的，uboot的入口是由链接脚本决定的。根据前面的分析uboot
+链接脚本目录为arch/arm/cpu/u-boot.lds（这个可以在配置文件中与CONFIG_SYS_LDSCRIPT来指定。）
+或者在
 入口地址也是由连接器决定的，在配置文件中可以由CONFIG_SYS_TEXT_BASE指定。这个会在编译时加在ld连接器的选项-Ttext中
 board/samsung/itop-4412/Kconfig 里面的内容
 if TARGET_ITOP-4412
@@ -18,7 +163,7 @@ endif
 将board/samsung/itop-4412/Kconfig 添加到arch/arm/cpu/armv7/exynos/Kconfig
 添加如下内容：
 source "board/samsung/itop-4412/Kconfig"
-在最后面endmenu 之前添加。
+在最后面endmenu 之前添加。在make 
 
  修改include/configs/itop-4412.h 里面的一个宏定义：
  #define CONFIG_SPL_LDSCRIPT    "board/samsung/common/exynos-uboot-spl.lds"
