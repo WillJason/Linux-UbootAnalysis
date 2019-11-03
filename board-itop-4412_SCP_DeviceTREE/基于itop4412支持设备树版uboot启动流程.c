@@ -634,6 +634,10 @@ void main_loop(void)
 bootcmd是否有定义？
 ./include/env_default.h定义bootcmd为CONFIG_BOOTCOMMAND
 ./inlcude/itop-4412.h中定义CONFIG_BOOTCOMMAND的值，其中bootm是我们需要关心的重点。
+"mmc read ${loadaddr} 0x1000 0x4000; mmc read ${dtb_addr} 0x800 0xa0; bootm ${loadaddr} - ${dtb_addr}" \
+mmc read 0x40007000 0x1000 0x4000即将存储设备上从块号0x1000开始的0x4000个存储块的东西
+拷贝到内存0x40007000开始的空间内。
+
 *这里顺便提一下itop-4412.h中的参数CONFIG_EXTRA_ENV_SETTINGS，其中定义了很多的参数
 包括：
 "loadaddr=0x40007000\0" \
