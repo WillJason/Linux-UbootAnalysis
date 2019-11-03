@@ -563,11 +563,12 @@ __weak void board_init_r(gd_t *new_gd, ulong dest_addr)
 #endif
 
 #ifdef CONFIG_NEEDS_MANUAL_RELOC
+
 	for (i = 0; i < ARRAY_SIZE(init_sequence_r); i++)
 		init_sequence_r[i] += gd->reloc_off;
 #endif
 /*调用initcall_run_list(init_sequence_r)函数执行一系列初始化函数以实现后半部
-分板级初始化，并在initcall_run_list函数里进入run_main_loop不再返回*/
+分板级初始化，设置机器ID之类的，最后进入run_main_loop不再返回*/
 	if (initcall_run_list(init_sequence_r))
 		hang();
 
@@ -633,7 +634,28 @@ void main_loop(void)
 bootcmd是否有定义？
 ./include/env_default.h定义bootcmd为CONFIG_BOOTCOMMAND
 ./inlcude/itop-4412.h中定义CONFIG_BOOTCOMMAND的值，其中bootm是我们需要关心的重点。
+*这里顺便提一下itop-4412.h中的参数CONFIG_EXTRA_ENV_SETTINGS，其中定义了很多的参数
+包括：
+"loadaddr=0x40007000\0" \
+	"rdaddr=0x48000000\0" \
+	"kerneladdr=0x40007000\0" \
+	"ramdiskaddr=0x48000000\0" \
+	"console=ttySAC2,115200n8\0" \
+	"mmcdev=0\0" \
+	"bootenv=uEnv.txt\0" \
+	"dtb_addr=0x41000000\0" \
+	"dtb_name=exynos4412-itop-4412.dtb\0" \
+	"loadbootenv=load mmc ${mmcdev} ${loadaddr} ${bootenv}\0" \
+	"bootargs=console=ttySAC2,115200n8 earlyprintk\0" \
+	"importbootenv=echo Importing environment from mmc ...; " \
+	"env import -t $loadaddr $filesize\0" \
+    "loadbootscript=load mmc ${mmcdev} ${loadaddr} boot.scr\0" \
+    "bootscript=echo Running bootscript from mmc${mmcdev} ...; " \
+    "source ${loadaddr}\0"
+加载地址、内核在内存存放的地址、终端波特率、bootargs等等
+猜测eMMC分区也会用到这些参数。****************************************************
 
+继续回来看：
 bootm:./common/cmd_bootm.c
 U_BOOT_CMD(
 	bootm,	CONFIG_SYS_MAXARGS,	1,	do_bootm,
