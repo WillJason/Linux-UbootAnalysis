@@ -567,8 +567,33 @@ __weak void board_init_r(gd_t *new_gd, ulong dest_addr)
 	for (i = 0; i < ARRAY_SIZE(init_sequence_r); i++)
 		init_sequence_r[i] += gd->reloc_off;
 #endif
-/*调用initcall_run_list(init_sequence_r)函数执行一系列初始化函数以实现后半部
-分板级初始化，设置机器ID之类的，最后进入run_main_loop不再返回*/
+	/*调用initcall_run_list(init_sequence_r)函数执行一系列初始化函数以实现后半部
+	分板级初始化
+	board_init,	// Setup chipselects 设置机器ID
+	initr_env,	->
+		set_default_env(NULL);->
+			himport_r(&env_htab, (char *)default_environment,
+			sizeof(default_environment), '\0', flags, 0,
+			0, NULL) == 0)
+			//使用默认的配置
+			const uchar default_environment[] = {
+			#ifdef	CONFIG_BOOTARGS
+				"bootargs="	CONFIG_BOOTARGS			"\0"
+			#endif
+			////在itop-4412.h配置CONFIG_BOOTCOMMAND参数
+			#ifdef	CONFIG_BOOTCOMMAND
+				"bootcmd="	CONFIG_BOOTCOMMAND		"\0"
+			#endif
+			....................
+			//在itop-4412.h配置CONFIG_EXTRA_ENV_SETTINGS了很多参数
+			//CONFIG_EXTRA_ENV_SETTINGS和CONFIG_BOOTCOMMAND这两个宏的意思就是把你手工在console上敲的代码集合在一起。
+			//比如 CONFIG_BOOTCOMMAND  的效果就是在uboot的console上一行一行把uboot命令敲进去（去掉“”和\），一直到
+			//run netboot这条命令。这些都是uboot的命令或uboot环境设置。
+			#ifdef	CONFIG_EXTRA_ENV_SETTINGS
+				CONFIG_EXTRA_ENV_SETTINGS
+			#endif
+			}
+	最后进入run_main_loop不再返回*/
 	if (initcall_run_list(init_sequence_r))
 		hang();
 

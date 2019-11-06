@@ -663,7 +663,19 @@ out:
 		init_sequence执行一系列初始化函数以实现后半部分板级初始化，设置机器ID之类的
 		比如：
 		board_init();里设置gd->bd->bi_arch_number = MACH_TYPE;机器ID
-		env_init,		/* initialize environment *
+		env_init,->
+			//配置文件中定义了CONFIG_ENV_IS_IN_AUTO
+			//common目录Makefile:COBJS-$(CONFIG_ENV_IS_IN_AUTO) += env_auto.o;使用common/Env_auto.c
+			gd->env_addr  = (ulong)&default_environment[0];		
+				uchar default_environment[] = {
+				#ifdef	CONFIG_BOOTARGS
+					"bootargs="	CONFIG_BOOTARGS			"\0"
+				#endif
+				#ifdef	CONFIG_BOOTCOMMAND
+					"bootcmd="	CONFIG_BOOTCOMMAND		"\0"
+				#endif
+				............
+				}
 		init_baudrate,		/* initialze baudrate settings *
 		serial_init,		/* serial communications setup *
 		console_init_f,		/* stage 1 init of console *
