@@ -839,7 +839,7 @@ clbss_l:cmp	r0, r1			/* while not at end of BSS */
 	mov     r0, r9                  /* gd_t */
 	ldr	r1, [r9, #GD_RELOCADDR]	/* dest_addr */
 	/* call board_init_r */
-	/*貌似调用Spl_boot.c (arch\arm\cpu\armv7\exynos)和 Board_r.c (common)这两个文件，其中一个也是weak定义*/
+	/*现在是主体uboot，所以调用的是Board_r.c (common)这个文件中的函数*/
 	ldr	pc, =board_init_r	/* this is auto-relocated! */
 
 	/*如果icache是enable，则无效掉icache，保证从sdram中更新指令到cache中。
@@ -905,7 +905,7 @@ __weak void board_init_r(gd_t *new_gd, ulong dest_addr)
 				.调用driver的probe函数（重要）		
 				.执行probe device之后uclass需要调用的一些函数
 			* /
-	board_init,	// Setup chipselects 设置机器ID
+	
 	initr_mmc,	//初始化emmc和SD卡。比较多，放在board_init_r函数后面解析
 	initr_env,	->
 		set_default_env(NULL);->
