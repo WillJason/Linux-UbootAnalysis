@@ -687,7 +687,7 @@ clr_gd:
 					dm_scan_fdt	->								//在设备树种搜索设备并进行驱动匹配，然后bind
 						dm_scan_fdt_node//具体绑定设备的入口，在该函数中会确定设备是否具有boot,dm-pre-reloc属性，如果没有则不会绑定
 		          lists_bind_fdt//搜索可以匹配到该设备的驱动
-		            device_bind
+		            device_bind				//有关device_bind()的DM实现函数在后面附录有详解
                   uclass_bind_device//将该设备挂在对应的U_CLASS链表上
                   drv->bind(dev)//设备驱动的bind接口函数
                   parent->driver->child_post_bind(dev)//父节点驱动的child_post_bind接口函数
@@ -1148,7 +1148,103 @@ abortboot函数里会打印Hit any key to stop autoboot:。*/
 
 
 
+//附录：
+/*
+device_bind函数
+在device_bind中实现了udevice和uclass的创建和绑定以及一些初始化操作，这里专门学习一下device_bind。
+device_bind的实现如下(去除部分代码)
+driver/core/device.c
+*/
+int device_bind(struct udevice *parent, const struct driver *drv,
+        const char *name, void *platdata, int of_offset,
+        struct udevice **devp)
+// parent:父设备
+// drv：设备对应的driver
+// name：设备名称
+// platdata：设备的平台数据指针
+// of_offset：在dtb中的偏移，即代表了其dts节点
+// devp：所创建的udevice的指针，用于返回
+{
+    struct udevice *dev;
+    struct uclass *uc;
+    int size, ret = 0;
 
+    ret = uclass_get(drv->id, &uc);
+        // 获取driver id对应的uclass，如果uclass原先并不存在，那么会在这里创建uclass并其uclass_driver进行绑定
+    dev = calloc(1, sizeof(struct udevice));
+        // 分配一个udevice
+
+    dev->platdata = platdata; // 设置udevice的平台数据指针
+    dev->name = name; // 设置udevice的name
+    dev->of_offset = of_offset; // 设置udevice的dts节点偏移
+    dev->parent = parent; // 设置udevice的父设备
+    dev->driver = drv;    // 设置udevice的对应的driver，相当于driver和udevice的绑定
+    dev->uclass = uc;    // 设置udevice的所属uclass
+
+    dev->seq = -1;
+    dev->req_seq = -1;
+    if (CONFIG_IS_ENABLED(OF_CONTROL) && CONFIG_IS_ENABLED(DM_SEQ_ALIAS)) {
+        /*
+         * Some devices, such as a SPI bus, I2C bus and serial ports
+         * are numbered using aliases.
+         *
+         * This is just a 'requested' sequence, and will be
+         * resolved (and ->seq updated) when the device is probed.
+         */
+        if (uc->uc_drv->flags & DM_UC_FLAG_SEQ_ALIAS) {
+            if (uc->uc_drv->name && of_offset != -1) {
+                fdtdec_get_alias_seq(gd->fdt_blob,
+                        uc->uc_drv->name, of_offset,
+                        &dev->req_seq);
+            }
+                    // 设置udevice的alias请求序号
+        }
+    }
+    if (!dev->platdata && drv->platdata_auto_alloc_size) {
+        dev->flags |= DM_FLAG_ALLOC_PDATA;
+        dev->platdata = calloc(1, drv->platdata_auto_alloc_size);
+                // 为udevice分配平台数据的空间，由driver中的platdata_auto_alloc_size决定
+    }
+
+    size = uc->uc_drv->per_device_platdata_auto_alloc_size;
+    if (size) {
+        dev->flags |= DM_FLAG_ALLOC_UCLASS_PDATA;
+        dev->uclass_platdata = calloc(1, size);
+                // 为udevice分配给其所属uclass使用的平台数据的空间，由所属uclass的driver中的per_device_platdata_auto_alloc_size决定
+    }
+    /* put dev into parent's successor list */
+    if (parent)
+        list_add_tail(&dev->sibling_node, &parent->child_head);
+        // 添加到父设备的子设备链表中
+    ret = uclass_bind_device(dev);
+        // uclass和udevice进行绑定，主要是实现了将udevice链接到uclass的设备链表中
+    /* if we fail to bind we remove device from successors and free it */
+    if (drv->bind) {
+        ret = drv->bind(dev);
+        // 执行udevice对应driver的bind函数
+    }
+
+    if (parent && parent->driver->child_post_bind) {
+        ret = parent->driver->child_post_bind(dev);
+        // 执行父设备的driver的child_post_bind函数
+    }
+
+    if (uc->uc_drv->post_bind) {
+        ret = uc->uc_drv->post_bind(dev);
+        if (ret)
+            goto fail_uclass_post_bind;
+        // 执行所属uclass的post_bind函数
+    }
+
+    if (devp)
+        *devp = dev;
+        // 将udevice进行返回
+
+    dev->flags |= DM_FLAG_BOUND;
+        // 设置已经绑定的标志
+        // 后续可以通过dev->flags & DM_FLAG_ACTIVATED或者device_active宏来判断设备是否已经被激活
+    return 0;
+}
 
 
 

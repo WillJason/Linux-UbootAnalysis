@@ -949,6 +949,18 @@ ENTRY(_main)
 		static init_fnc_t init_sequence_f[] = {
 			........
 			/ *
+			DM的初始化
+			.创建根设备root的udevice，存放在gd->dm_root中。
+			.根设备其实是一个虚拟设备，主要是为uboot的其他设备提供一个挂载点。
+			.初始化uclass链表gd->uclass_root
+			
+			DM中udevice和uclass的解析
+			.udevice的创建和uclass的创建
+			.udevice和uclass的绑定
+			.uclass_driver和uclass的绑定
+			.driver和udevice的绑定
+			.部分driver函数的调用
+			
 			initf_dm
 			这里涉及到了DM驱动模型相关的东西.
 			1、DM驱动模型的一般流程bind->ofdata_to_platdata(可选)->probe
@@ -1295,6 +1307,22 @@ uboot涉及设备树的两个函数分析：/common/board_r.c:init_sequence_r[]中initr_dm，in
 		status = "okay";
 	};
 	SD卡驱动：drivers/mmc/s5p_sdhci.c
+	static const struct udevice_id s5p_sdhci_ids[] = {
+		{ .compatible = "samsung,exynos4412-sdhci"},
+		{ }
+	};
+	
+	U_BOOT_DRIVER(s5p_sdhci_drv) = {
+		.name		= "s5p_sdhci",
+		.id		= UCLASS_MMC,
+		.of_match	= s5p_sdhci_ids,
+		.bind		= s5p_sdhci_bind,
+		.ops		= &sdhci_ops,
+		.probe		= s5p_sdhci_probe,
+		.priv_auto_alloc_size = sizeof(struct sdhci_host),
+		.platdata_auto_alloc_size = sizeof(struct s5p_sdhci_plat),
+	};
+	驱动以{ .compatible = "samsung,exynos4412-sdhci" },来匹配的，再看下设备树里面
 	sdhci2: sdhci@12530000 {
 		#address-cells = <1>;
 		#size-cells = <0>;
