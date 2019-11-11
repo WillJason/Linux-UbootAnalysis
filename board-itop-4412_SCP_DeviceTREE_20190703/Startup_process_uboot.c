@@ -705,7 +705,7 @@ int do_lowlevel_init(void)
 				dmc = (struct exynos4_dmc *)(samsung_get_base_dmc_ctrl()
 								+ DMC_OFFSET);
 				dmc_init(dmc);					*/ //dmc_init(dmc)END.
-		//tzpc_init();					//tzpc这个安全源代码去掉了，原因未知				
+		//tzpc_init();					//tzpc这个安全源代码去掉了，必须关掉，否则从SPL跳转到UBOOT执行时死机。				
 }
 			
 /*------------------------------------------------------------------------------------------------

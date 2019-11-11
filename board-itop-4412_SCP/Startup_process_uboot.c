@@ -1,4 +1,5 @@
 /*
+uboot版本：2010.03
 先来看看配置过程：
 执行build_uboot.sh SCP_1GDDR
 *分析build_uboot.sh文件

@@ -1,4 +1,5 @@
 /*
+uboot版本：2015.04
 先来看一下大致的启动流程。
 大体上来说：
 RomBoot --> SPL --> u-boot --> Linux kernel --> file system --> start application
@@ -419,7 +420,7 @@ clr_gd:
 					system_clock_init();系统时钟初始化；
 					test_uart();测试串口；
 					mem_ctrl_init(actions & DO_MEM_RESET);ddr内存初始化；
-					//tzpc_init();tzpc这个安全源代码去掉了，原因未知
+					//tzpc_init();tzpc这个安全源代码去掉了，必须关掉，否则从SPL跳转到UBOOT执行时死机。
 				/*				
 				//Copy U-boot from mmc to RAM 将uboot code拷贝到relocaddr
 				copy_uboot_to_ram();
