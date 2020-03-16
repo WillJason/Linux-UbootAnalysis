@@ -86,7 +86,8 @@ CONFIG_FASTBOOT_FLASH_MMC_DEV=0
 --------------------------------------------------------------------------------------
 In--uboot/arch/arm/Kconfig:
 config SYS_ARCH
-	default "arm"
+	default "arm"		//在这个文件开始menu"ARM architecture"表示这个文件依赖于ARM，在itop4412_defconfig
+									//中定义了ARM=y;所以这里SYS_ARCH为"arm"
 config SYS_CPU
 	default "arm720t" if CPU_ARM720T
 	default "arm920t" if CPU_ARM920T
@@ -146,6 +147,7 @@ endif
 # If there is no specified link script, we look in a number of places for it
 ifndef LDSCRIPT
 	ifeq ($(wildcard $(LDSCRIPT)),)
+		#//在config.mk中BOARD := $(CONFIG_SYS_BOARD:"%"=%),VENDOR := $(CONFIG_SYS_VENDOR:"%"=%)
 		#//$(BOARDDIR)在config.mk中BOARDDIR = $(VENDOR)/$(BOARD)，根据前面的定义BOARDDIR=samsung/itop4412
 		#//LDSCRIPT:=/board/samsung/itop4412/u-boot.lds  无此文件
 		LDSCRIPT := $(srctree)/board/$(BOARDDIR)/u-boot.lds
